@@ -1,0 +1,130 @@
+local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local AddSpeedEvent = ReplicatedStorage
+    :WaitForChild("Events")
+    :WaitForChild("AddSpeed")
+
+local RequestRebirthEvent = ReplicatedStorage
+    :WaitForChild("Events")
+    :WaitForChild("RequestRebirth")
+
+local Window = WindUI:CreateWindow({
+    Title = "Beach Escape",
+    Author = "discord = vpkq",
+    Folder = "FarmSpeed",
+    Size = UDim2.fromOffset(520, 360),
+    Transparent = true,
+    Theme = "Dark",
+    SideBarWidth = 180,
+    ScrollBarEnabled = true
+})
+
+local MainTab = Window:Tab({
+    Title = "Main",
+    Icon = "zap"
+})
+
+local TeleportTab = Window:Tab({
+    Title = "Teleport",
+    Icon = "map-pinned"
+})
+
+local autoFarmSpeed = false
+local fireDelay = 0.2
+local autoRebirth = false
+
+MainTab:Toggle({
+    Title = "Auto Farm Speed",
+    Desc = "Continuously fires AddSpeed",
+    Value = false,
+    Callback = function(state)
+        autoFarmSpeed = state
+
+        if autoFarmSpeed then
+            task.spawn(function()
+                while autoFarmSpeed do
+                    pcall(function()
+                        AddSpeedEvent:FireServer()
+                    end)
+                    task.wait(fireDelay)
+                end
+            end)
+        end
+    end
+})
+
+MainTab:Slider({
+    Title = "Fire Delay",
+    Desc = "Lower = faster",
+    Value = {
+        Min = 0.001,
+        Max = 1,
+        Default = 0.001,
+    },
+    Step = 0.05,
+    Callback = function(value)
+        fireDelay = value
+    end
+})
+
+MainTab:Toggle({
+    Title = "Auto Rebirth",
+    Desc = "Continuously invokes rebirth",
+    Value = false,
+    Callback = function(state)
+        autoRebirth = state
+
+        if state then
+            task.spawn(function()
+                while autoRebirth do
+                    pcall(function()
+                        RequestRebirthEvent:InvokeServer()
+                    end)
+                    task.wait(2)
+                end
+            end)
+        end
+    end
+})
+
+TeleportTab:Toggle({
+    Title = "500 Wins",
+    Desc = "Teleport to exact position (every second)",
+    Callback = function(state) -- state = true wenn an, false wenn aus
+        local LocalPlayer = game.Players.LocalPlayer
+        local pos = Vector3.new(-1299.5738525390625, -0.45217370986938477, 653.824462890625)
+
+        LocalPlayer:SetAttribute("TeleportLoopActive", state)
+
+        if state then
+            task.spawn(function()
+                while LocalPlayer:GetAttribute("TeleportLoopActive") do
+                    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+                    local root = character:WaitForChild("HumanoidRootPart")
+
+                    root.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+
+                    task.wait(fireDelay)
+                end
+            end)
+        end
+    end
+})
+
+TeleportTab:Slider({
+    Title = "Fire Delay",
+    Desc = "Lower = faster",
+    Value = {
+        Min = 0.01,
+        Max = 1,
+        Default = 0.05,
+    },
+    Step = 0.05,
+    Callback = function(value)
+        fireDelay = value
+    end
+})
