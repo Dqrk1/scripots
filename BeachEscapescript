@@ -4,6 +4,8 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
+game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
+
 local AddSpeedEvent = ReplicatedStorage
     :WaitForChild("Events")
     :WaitForChild("AddSpeed")
@@ -29,13 +31,14 @@ local MainTab = Window:Tab({
 })
 
 local TeleportTab = Window:Tab({
-    Title = "Teleport",
+    Title = "Wins farm",
     Icon = "map-pinned"
 })
 
 local autoFarmSpeed = false
 local fireDelay = 0.2
 local autoRebirth = false
+local targetPosition = Vector3.new(-1113.142333984375, 0.4415562152862549, 189.47830200195312)
 
 MainTab:Toggle({
     Title = "Auto Farm Speed",
@@ -92,7 +95,7 @@ MainTab:Toggle({
 })
 
 TeleportTab:Toggle({
-    Title = "500 Wins",
+    Title = "Auto Farm 500 Wins",
     Desc = "Teleport to exact position (every second)",
     Callback = function(state) -- state = true wenn an, false wenn aus
         local LocalPlayer = game.Players.LocalPlayer
@@ -126,5 +129,19 @@ TeleportTab:Slider({
     Step = 0.05,
     Callback = function(value)
         fireDelay = value
+    end
+})
+
+TeleportTab:Button({
+    Title = "2x Speed Treadmill",
+    Desc = "Teleport to 2x Speed Treadmill",
+    Callback = function()
+        local LocalPlayer = game.Players.LocalPlayer
+        local pos = Vector3.new(-1113.142333984375, 0.4415562152862549, 189.47830200195312)
+
+        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+        local root = character:WaitForChild("HumanoidRootPart")
+
+        root.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
     end
 })
