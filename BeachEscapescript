@@ -1,3 +1,11 @@
+-- 1. Alte WindUI GUIs aus gethui() und CoreGui löschen, um Überlappungen zu vermeiden
+local target = (gethui and gethui()) or game:GetService("CoreGui")
+for _, v in ipairs(target:GetChildren()) do
+    if v:IsA("ScreenGui") and (v.Name:match("WindUI") or v.Name == "ScreenGui") then
+        v:Destroy()
+    end
+end
+
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"))()
 
 local Players = game:GetService("Players")
@@ -6,13 +14,47 @@ local LocalPlayer = Players.LocalPlayer
 
 game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
 
-local AddSpeedEvent = ReplicatedStorage
-    :WaitForChild("Events")
-    :WaitForChild("AddSpeed")
+-- Remote Events
+local Events = ReplicatedStorage:WaitForChild("Events", 5)
+local AddSpeedEvent = Events and Events:WaitForChild("AddSpeed", 5)
+local RequestRebirthEvent = Events and Events:WaitForChild("RequestRebirth", 5)
 
-local RequestRebirthEvent = ReplicatedStorage
-    :WaitForChild("Events")
-    :WaitForChild("RequestRebirth")
+if not AddSpeedEvent or not RequestRebirthEvent then
+    warn("[FarmSpeed UI]: Events konnten nicht geladen werden!")
+    return
+end
+
+-- Zentrale Koordinaten
+local TREADMILL_POS = Vector3.new(-1113.142333984375, 0.4415562152862549, 189.47830200195312)
+
+-- Zustände und getrennte Delays
+local autoFarmSpeed = false
+local speedFireDelay = 0.2
+
+local autoRebirth = false
+local rebirthDelay = 2.0
+
+local autoFarmWins = false
+local teleportFireDelay = 1.2 -- Standardmäßig auf sichere 1.2s gesetzt, da alle Knöpfe geerntet werden
+
+-- Partikel und Schweif-Zustände
+local disablePopups = false
+local popupsConnection
+
+local disableTrail = false
+local trailConnection
+
+-- Hilfsfunktion für sicheren Teleport
+local function safeTeleport(position)
+    local character = LocalPlayer.Character
+    if character then
+        local root = character:FindFirstChild("HumanoidRootPart")
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if root and humanoid and humanoid.Health > 0 then
+            root.CFrame = CFrame.new(position + Vector3.new(0, 3, 0))
+        end
+    end
+end
 
 local Window = WindUI:CreateWindow({
     Title = "Beach Escape",
@@ -35,10 +77,7 @@ local TeleportTab = Window:Tab({
     Icon = "map-pinned"
 })
 
-local autoFarmSpeed = false
-local fireDelay = 0.2
-local autoRebirth = false
-local targetPosition = Vector3.new(-1113.142333984375, 0.4415562152862549, 189.47830200195312)
+-- --- MAIN TAB ---
 
 MainTab:Toggle({
     Title = "Auto Farm Speed",
@@ -53,7 +92,7 @@ MainTab:Toggle({
                     pcall(function()
                         AddSpeedEvent:FireServer()
                     end)
-                    task.wait(fireDelay)
+                    task.wait(speedFireDelay)
                 end
             end)
         end
@@ -62,15 +101,15 @@ MainTab:Toggle({
 
 MainTab:Slider({
     Title = "Fire Delay",
-    Desc = "Lower = faster",
+    Desc = "Lower = faster (Recommended: >= 0.05)",
     Value = {
-        Min = 0.001,
+        Min = 0.01,
         Max = 1,
-        Default = 0.001,
+        Default = 0.2,
     },
-    Step = 0.05,
+    Step = 0.01,
     Callback = function(value)
-        fireDelay = value
+        speedFireDelay = value
     end
 })
 
@@ -81,54 +120,187 @@ MainTab:Toggle({
     Callback = function(state)
         autoRebirth = state
 
-        if state then
+        if autoRebirth then
             task.spawn(function()
                 while autoRebirth do
                     pcall(function()
                         RequestRebirthEvent:InvokeServer()
                     end)
-                    task.wait(2)
+                    task.wait(rebirthDelay)
                 end
             end)
         end
     end
 })
 
+MainTab:Toggle({
+    Title = "Disable Popups",
+    Desc = "Removes floating shoes and +Speed texts",
+    Value = false,
+    Callback = function(state)
+        disablePopups = state
+        
+        if disablePopups then
+            local gui = LocalPlayer.PlayerGui:FindFirstChild("GUI")
+            if gui then
+                for _, child in ipairs(gui:GetChildren()) do
+                    if child.Name == "PopUp" then
+                        child:Destroy()
+                    end
+                end
+            end
+            
+            if not popupsConnection and gui then
+                popupsConnection = gui.ChildAdded:Connect(function(child)
+                    if disablePopups and child.Name == "PopUp" then
+                        task.defer(function()
+                            child:Destroy()
+                        end)
+                    end
+                end)
+            end
+        else
+            if popupsConnection then
+                popupsConnection:Disconnect()
+                popupsConnection = nil
+            end
+        end
+    end
+})
+
+MainTab:Toggle({
+    Title = "Disable Trail",
+    Desc = "doesnt work rn ",
+    Value = false,
+    Callback = function(state)
+        disableTrail = state
+        
+        if LocalPlayer.Character then
+            local trail = LocalPlayer.Character:FindFirstChild("PlayerTrail")
+            if trail then
+                trail.Enabled = not disableTrail
+            end
+        end
+        
+        if disableTrail then
+            if not trailConnection then
+                trailConnection = LocalPlayer.CharacterAdded:Connect(function(char)
+                    task.wait(1)
+                    local trail = char:FindFirstChild("PlayerTrail")
+                    if trail then
+                        trail.Enabled = not disableTrail
+                    end
+                end)
+            end
+        else
+            if trailConnection then
+                trailConnection:Disconnect()
+                trailConnection = nil
+            end
+        end
+    end
+})
+
+-- --- TELEPORT TAB ---
+
+local winFarmConnection
+local isLocked = false
+local lockedCFrame = nil
+
 TeleportTab:Toggle({
-    Title = "Auto Farm 500 Wins",
-    Desc = "Teleport to exact position (every second)",
-    Callback = function(state) -- state = true wenn an, false wenn aus
-        local LocalPlayer = game.Players.LocalPlayer
-        local pos = Vector3.new(-1299.5738525390625, -0.45217370986938477, 653.824462890625)
+    Title = "Auto Farm Wins (Smart)",
+    Desc = "Farms wins when standing. Pauses automatically when walking!",
+    Value = false,
+    Callback = function(state)
+        autoFarmWins = state
 
-        LocalPlayer:SetAttribute("TeleportLoopActive", state)
+        if autoFarmWins then
+            local character = LocalPlayer.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if not root or not humanoid then
+                warn("[FarmSpeed UI]: Character/Humanoid not found!")
+                autoFarmWins = false
+                return
+            end
 
-        if state then
-            task.spawn(function()
-                while LocalPlayer:GetAttribute("TeleportLoopActive") do
-                    local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-                    local root = character:WaitForChild("HumanoidRootPart")
-
-                    root.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
-
-                    task.wait(fireDelay)
+            -- Heartbeat Connection: Lockt Spieler nur beim Stillstehen
+            local RunService = game:GetService("RunService")
+            winFarmConnection = RunService.Heartbeat:Connect(function()
+                if not autoFarmWins then return end
+                
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local r = char and char:FindFirstChild("HumanoidRootPart")
+                
+                if r and hum then
+                    if hum.MoveDirection.Magnitude == 0 then
+                        if not isLocked then
+                            lockedCFrame = r.CFrame
+                            isLocked = true
+                        end
+                        r.CFrame = lockedCFrame
+                        r.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                        r.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+                    else
+                        isLocked = false
+                        lockedCFrame = nil
+                    end
                 end
             end)
+
+            -- Win Farm Loop
+            task.spawn(function()
+                while autoFarmWins do
+                    local char = LocalPlayer.Character
+                    local hum = char and char:FindFirstChildOfClass("Humanoid")
+                    local r = char and char:FindFirstChild("HumanoidRootPart")
+                    local giveWins = game.Workspace:FindFirstChild("GiveWins")
+
+                    if r and hum and hum.MoveDirection.Magnitude == 0 and isLocked and giveWins then
+                        -- Touch auf ALLE Knöpfe gleichzeitig im selben Frame!
+                        for _, button in ipairs(giveWins:GetChildren()) do
+                            local touchPart = button:FindFirstChild("Touch")
+                            if touchPart then
+                                if firetouchinterest then
+                                    firetouchinterest(r, touchPart, 0)
+                                    firetouchinterest(r, touchPart, 1)
+                                end
+                            end
+                        end
+                    end
+                    task.wait(teleportFireDelay)
+                end
+
+                if winFarmConnection then
+                    winFarmConnection:Disconnect()
+                    winFarmConnection = nil
+                end
+                isLocked = false
+                lockedCFrame = nil
+            end)
+        else
+            if winFarmConnection then
+                winFarmConnection:Disconnect()
+                winFarmConnection = nil
+            end
+            isLocked = false
+            lockedCFrame = nil
         end
     end
 })
 
 TeleportTab:Slider({
-    Title = "Fire Delay",
-    Desc = "Lower = faster",
+    Title = "Cooldown Delay",
+    Desc = "Lower = faster (1.2s is recommended)",
     Value = {
-        Min = 0.01,
-        Max = 1,
-        Default = 0.05,
+        Min = 0.05,
+        Max = 3,
+        Default = 1.2,
     },
     Step = 0.05,
     Callback = function(value)
-        fireDelay = value
+        teleportFireDelay = value
     end
 })
 
@@ -136,12 +308,6 @@ TeleportTab:Button({
     Title = "2x Speed Treadmill",
     Desc = "Teleport to 2x Speed Treadmill",
     Callback = function()
-        local LocalPlayer = game.Players.LocalPlayer
-        local pos = Vector3.new(-1113.142333984375, 0.4415562152862549, 189.47830200195312)
-
-        local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        local root = character:WaitForChild("HumanoidRootPart")
-
-        root.CFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+        safeTeleport(TREADMILL_POS)
     end
 })
