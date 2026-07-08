@@ -33,6 +33,7 @@ local TREADMILL_POS = Vector3.new(-1113.142333984375, 0.4415562152862549, 189.47
 -- Zustände und getrennte Delays
 local autoFarmSpeed = false
 local speedFireDelay = 0.2
+local farmMultiplier = 1
 
 local autoRebirth = false
 local rebirthDelay = 2.0
@@ -106,12 +107,28 @@ MainTab:Toggle({
             task.spawn(function()
                 while autoFarmSpeed do
                     pcall(function()
-                        AddSpeedEvent:FireServer()
+                        for i = 1, farmMultiplier do
+                            AddSpeedEvent:FireServer()
+                        end
                     end)
                     task.wait(speedFireDelay)
                 end
             end)
         end
+    end
+})
+
+MainTab:Slider({
+    Title = "Farm Multiplier",
+    Desc = "Fires remote multiple times per loop (e.g. 1000 for x1000)",
+    Value = {
+        Min = 1,
+        Max = 1000,
+        Default = 1,
+    },
+    Step = 1,
+    Callback = function(value)
+        farmMultiplier = value
     end
 })
 
