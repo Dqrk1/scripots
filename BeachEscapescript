@@ -10,6 +10,9 @@ local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footag
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
 local LocalPlayer = Players.LocalPlayer
 
 game:GetService("GuiService"):SetGameplayPausedNotificationEnabled(false)
@@ -35,7 +38,7 @@ local autoRebirth = false
 local rebirthDelay = 2.0
 
 local autoFarmWins = false
-local teleportFireDelay = 1.2 -- Standardmäßig auf sichere 1.2s gesetzt, da alle Knöpfe geerntet werden
+local teleportFireDelay = 1.2
 
 -- Partikel und Schweif-Zustände
 local disablePopups = false
@@ -43,6 +46,19 @@ local popupsConnection
 
 local disableTrail = false
 local trailConnection
+
+-- Custom WalkSpeed Zustände
+local customSpeedActive = false
+local walkSpeedValue = 100
+
+-- Anti-AFK Setup
+local antiAFKConnection = LocalPlayer.Idled:Connect(function()
+    pcall(function()
+        VirtualUser:Button2Down(Vector2.new(0, 0), game.Workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), game.Workspace.CurrentCamera.CFrame)
+    end)
+end)
 
 -- Hilfsfunktion für sicheren Teleport
 local function safeTeleport(position)
@@ -134,6 +150,35 @@ MainTab:Toggle({
 })
 
 MainTab:Toggle({
+    Title = "Custom WalkSpeed",
+    Desc = "Modifies your local walking speed",
+    Value = false,
+    Callback = function(state)
+        customSpeedActive = state
+        if not state then
+            local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = 16
+            end
+        end
+    end
+})
+
+MainTab:Slider({
+    Title = "Speed Value",
+    Desc = "WalkSpeed modifier (Default: 16)",
+    Value = {
+        Min = 16,
+        Max = 500,
+        Default = 100,
+    },
+    Step = 5,
+    Callback = function(value)
+        walkSpeedValue = value
+    end
+})
+
+MainTab:Toggle({
     Title = "Disable Popups",
     Desc = "Removes floating shoes and +Speed texts",
     Value = false,
@@ -170,7 +215,7 @@ MainTab:Toggle({
 
 MainTab:Toggle({
     Title = "Disable Trail",
-    Desc = "doesnt work rn ",
+    Desc = "Hides the speed trail behind your character",
     Value = false,
     Callback = function(state)
         disableTrail = state
@@ -311,3 +356,29 @@ TeleportTab:Button({
         safeTeleport(TREADMILL_POS)
     end
 })
+
+-- Heartbeat Loop für Custom WalkSpeed
+RunService.Heartbeat:Connect(function()
+    if customSpeedActive then
+        local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = walkSpeedValue
+        end
+    end
+end)
+
+-- UI Toggle Keybind (RightControl)
+local uiVisible = true
+local uiConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and input.KeyCode == Enum.KeyCode.RightControl then
+        uiVisible = not uiVisible
+        local container = (gethui and gethui()) or game:GetService("CoreGui")
+        
+        -- Da WindUI mehrere ScreenGuis erstellt (Notifications, Tooltips, etc.), blenden wir alle ein/aus
+        for _, gui in ipairs(container:GetChildren()) do
+            if gui:IsA("ScreenGui") and (gui.Name:match("WindUI") or gui.Name == "ScreenGui") then
+                gui.Enabled = uiVisible
+            end
+        end
+    end
+end)
